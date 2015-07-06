@@ -1,7 +1,7 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <limits.h>
-// fin des mockups
+
 const int D[8] =  {13, 12, 11, 10, 9, 8, 7, 6};
 unsigned long scheduleIn = ULONG_MAX;
 long timerstep = 1;
@@ -16,6 +16,10 @@ long timerstep = 1;
 char CommandReceptionState = WAITINGFIRSTBYTE;
 char currentCommandId = 0;
 char currentCommandLength = 0;
+char currentCommandInstruction = 0;
+char parametersStillToReceive = 0;
+char currentParameters[255];
+char currentParameterToFill = 0;
 
 #define PING 1
 #define READ_DATA 2
@@ -25,10 +29,44 @@ char currentCommandLength = 0;
 #define RESET 6
 #define SYNC_WRITE 0x83
 
-char currentCommandInstruction = 0;
-char parametersStillToReceive = 0;
 
 
+#define ModelNumber 0
+#define FirmwareVersion 2
+#define Id 3
+#define BaudRate 4
+#define ReturnDelay 5
+#define CWAngleLimit 6
+#define CCWAngleLimit 8
+#define TemperatureLimit 11
+#define LowVoltageLimit 12
+#define HighVoltageLimit 13
+#define MaxTorque 14
+#define StatusReturnLevel 16
+#define AlarmLED 17
+#define AlarmShutdown 18
+#define DownCalibration 20
+#define UpCalibration 22
+#define TorqueEnable 24
+#define LED 25
+#define CWComplianceMargin 26
+#define CCWComplianceMargin 27
+#define CWComplianceSlope 28
+#define CCWComplianceSlope 29
+#define GoalPosition30
+#define MovingSpeed32
+#define TorqueLimit 34
+#define CurrentPosition 36
+#define CurrentSpeed 38
+#define CurrentLoad 40
+#define CurrentVoltage 42
+#define CurrentTemperature 43
+#define RegisteredInstruction 44
+#define Moving 46
+#define Lock 47
+#define Punch 48
+
+char controlTable[50] = {12,0,0,1,1,250,0,0,255,3,0,85,60,190,255,3,2,4,4,0,0,0,0,0,0,0,0,0,32,32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,32,0};
 void parallelOutput(int number)
 {
     for( int i= 0;i<8; ++i)
@@ -66,7 +104,6 @@ void processCommand()
     {
       case PING:
       {
-        
         Serial.write(0xFF);
         Serial.write(0xFF);
         Serial.write(currentCommandId);
@@ -75,7 +112,24 @@ void processCommand()
         char checksum = ~(currentCommandId + 2);
         Serial.write(checksum);
         Serial.flush();
-        scheduleIn = 0;
+        break;
+      }
+      case READ_DATA:
+      {
+        Serial.write(0xFF);
+        Serial.write(0xFF);
+        Serial.write(currentCommandId);
+        char checksum = currentCommandId;
+        Serial.write(currentParameters[1] + 2);
+        checksum += currentParameters[1] + 2;
+        Serial.write(0x00);
+        for (int i = currentParameters[0]; i<(currentParameters[0] + currentParameters[1]); ++i)
+        {
+          Serial.write(controlTable[i]);
+          checksum += controlTable[i];
+        }
+        checksum = ~checksum;
+        Serial.write(checksum);
         break;
       }
     }
@@ -133,6 +187,8 @@ void loop()
       }      
       case WAITINGPARAMETERS:
       {
+        currentParameters[currentParameterToFill] = inByte;
+        currentParameterToFill += 1;
         parametersStillToReceive -=1;
         if ( parametersStillToReceive == 0)
         {
@@ -145,6 +201,7 @@ void loop()
         
         processCommand();
         CommandReceptionState = 0;
+        currentParameterToFill = 0;
         break;
       }       
     }
