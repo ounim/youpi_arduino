@@ -16,8 +16,18 @@ long timerstep = 1;
 char CommandReceptionState = WAITINGFIRSTBYTE;
 char currentCommandId = 0;
 char currentCommandLength = 0;
+
+#define PING 1
+#define READ_DATA 2
+#define WRITE_DATA 3
+#define REG_WRITE 4
+#define ACTION 5
+#define RESET 6
+#define SYNC_WRITE 0x83
+
 char currentCommandInstruction = 0;
 char parametersStillToReceive = 0;
+
 
 void parallelOutput(int number)
 {
@@ -34,8 +44,8 @@ void setup() {
     {
         pinMode(D[i], OUTPUT);
     }
-    parallelOutput(0x47);
-    parallelOutput(0x00);
+//    parallelOutput(0x47);
+//    parallelOutput(0x00);
 
     // initialize timer1
     cli();           // disable all interrupts
@@ -45,13 +55,33 @@ void setup() {
     TCCR1B |= (1 << CS10);    // no prescaler
     TIMSK1 |= (1 << OCIE1A);  // enable timer compare interrupt
     sei();
-    
     Serial.begin(9600);
 }
 
 void processCommand()
 {
-  scheduleIn = 3000000;
+  if (currentCommandId < 10)
+  {
+    switch(currentCommandInstruction)
+    {
+      case PING:
+      {
+        
+        Serial.write(0xFF);
+        Serial.write(0xFF);
+        Serial.write(currentCommandId);
+        Serial.write(0x02);
+        Serial.write(0x00);
+        char checksum = ~(currentCommandId + 2);
+        Serial.write(checksum);
+        Serial.flush();
+        scheduleIn = 0;
+        break;
+      }
+    }
+  }
+  //TODO handle broadcast Id
+ 
 }
 void loop()
 {
@@ -60,6 +90,7 @@ void loop()
   if (Serial.available() > 0) {
     // get incoming byte:
     inByte = Serial.read();
+    
     switch (CommandReceptionState)
     {
       case WAITINGFIRSTBYTE:
@@ -77,6 +108,7 @@ void loop()
       }
       case WAITINGID:
       {
+        
         currentCommandId = inByte;
         CommandReceptionState += 1;
         break;
@@ -90,8 +122,13 @@ void loop()
       }
       case WAITINGINSTRUCTION:
       {
+        
         currentCommandInstruction = inByte;
         CommandReceptionState += 1;
+        if (parametersStillToReceive == 0)
+        {
+          CommandReceptionState += 1;
+        }
         break;
       }      
       case WAITINGPARAMETERS:
@@ -105,6 +142,7 @@ void loop()
       }   
       case WAITINGCHECKSUM:
       {
+        
         processCommand();
         CommandReceptionState = 0;
         break;
@@ -181,12 +219,12 @@ ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
     if (digitalRead(13) == LOW)
     {
       digitalWrite(13,HIGH);
-      scheduleIn = 300000;
+      scheduleIn = 3000000;
     }
     else 
     {
       digitalWrite(13,LOW);
-      scheduleIn = ULONG_MAX;
+ //     scheduleIn = ULONG_MAX;
     }
 
   }
