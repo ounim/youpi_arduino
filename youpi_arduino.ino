@@ -2,9 +2,7 @@
 #include <avr/interrupt.h>
 #include <limits.h>
 
-const int D[8] =  {13, 12, 11, 10, 9, 8, 7, 6};
-unsigned long scheduleIn = ULONG_MAX;
-long timerstep = 1;
+
 
 #define WAITINGFIRSTBYTE 0
 #define WAITINGSECONDBYTE 1
@@ -13,13 +11,6 @@ long timerstep = 1;
 #define WAITINGINSTRUCTION 4
 #define WAITINGPARAMETERS 5
 #define WAITINGCHECKSUM 6
-char CommandReceptionState = WAITINGFIRSTBYTE;
-char currentCommandId = 0;
-char currentCommandLength = 0;
-char currentCommandInstruction = 0;
-char parametersStillToReceive = 0;
-char currentParameters[255];
-char currentParameterToFill = 0;
 
 #define PING 1
 #define READ_DATA 2
@@ -53,8 +44,8 @@ char currentParameterToFill = 0;
 #define CCWComplianceMargin 27
 #define CWComplianceSlope 28
 #define CCWComplianceSlope 29
-#define GoalPosition30
-#define MovingSpeed32
+#define GoalPosition 30
+#define MovingSpeed 32
 #define TorqueLimit 34
 #define CurrentPosition 36
 #define CurrentSpeed 38
@@ -66,7 +57,37 @@ char currentParameterToFill = 0;
 #define Lock 47
 #define Punch 48
 
-char controlTable[50] = {12,0,0,1,1,250,0,0,255,3,0,85,60,190,255,3,2,4,4,0,0,0,0,0,0,0,0,0,32,32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,32,0};
+const int D[8] =  {13, 12, 11, 10, 9, 8, 7, 6};
+volatile unsigned long long scheduleAt = 9223372036854775807LL;
+//unsigned long scheduleAt = 70000;
+unsigned long long time = 0;
+long timerstep = 1;
+
+//Command parameters and state machine
+char CommandReceptionState = WAITINGFIRSTBYTE;
+char currentCommandId = 0;
+char currentCommandLength = 0;
+char currentCommandInstruction = 0;
+char parametersStillToReceive = 0;
+char currentParameters[255];
+char currentParameterToFill = 0;
+
+
+char controlTable[6][50] = {{12,0,0,1,1,250,0,0,255,3,0,85,60,190,255,3,2,4,4,0,0,0,0,0,0,0,0,0,32,32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,32,0},
+{12,0,0,1,1,250,0,0,255,3,0,85,60,190,255,3,2,4,4,0,0,0,0,0,0,0,0,0,32,32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,32,0},
+{12,0,0,1,1,250,0,0,255,3,0,85,60,190,255,3,2,4,4,0,0,0,0,0,0,0,0,0,32,32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,32,0},
+{12,0,0,1,1,250,0,0,255,3,0,85,60,190,255,3,2,4,4,0,0,0,0,0,0,0,0,0,32,32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,32,0},
+{12,0,0,1,1,250,0,0,255,3,0,85,60,190,255,3,2,4,4,0,0,0,0,0,0,0,0,0,32,32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,32,0},
+{12,0,0,1,1,250,0,0,255,3,0,85,60,190,255,3,2,4,4,0,0,0,0,0,0,0,0,0,32,32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,32,0}};
+
+long YoupiPosition[6] = {0,0,0,0,0,0};
+char YoupiSens[6] = {1,1,1,1,1,1};
+unsigned char command;
+unsigned char commandValue;
+unsigned char commandId;
+bool commandStart = true;
+unsigned long baudRate = 100000;
+
 void parallelOutput(int number)
 {
     for( int i= 0;i<8; ++i)
@@ -89,8 +110,9 @@ void setup() {
     cli();           // disable all interrupts
     TCCR1A = 0;
     TCCR1B = 0;
-    OCR1A = 0;            // compare match register max
+    OCR1A = 65535;;            // compare match register max
     TCCR1B |= (1 << CS10);    // no prescaler
+    TCCR1B |= (1 << WGM12);   // clear on compare match
     TIMSK1 |= (1 << OCIE1A);  // enable timer compare interrupt
     sei();
     Serial.begin(9600);
@@ -111,7 +133,6 @@ void processCommand()
         Serial.write(0x00);
         char checksum = ~(currentCommandId + 2);
         Serial.write(checksum);
-        Serial.flush();
         break;
       }
       case READ_DATA:
@@ -125,17 +146,64 @@ void processCommand()
         Serial.write(0x00);
         for (int i = currentParameters[0]; i<(currentParameters[0] + currentParameters[1]); ++i)
         {
-          Serial.write(controlTable[i]);
-          checksum += controlTable[i];
+          Serial.write(controlTable[currentCommandId][i]);
+          checksum += controlTable[currentCommandId][i];
         }
         checksum = ~checksum;
+        Serial.write(checksum);
+        break;
+      }
+      case WRITE_DATA:
+      {
+        bool willMove = false;
+        for (int i = 0; i< currentCommandLength -2 ; ++i)
+         {
+           int controlId = currentParameters[0] + i;
+           if (controlId == 30 || controlId == 31)
+           {
+             willMove = true;
+           }
+            controlTable[currentCommandId][controlId] = currentParameters[i + 1 ];
+         }
+        if (willMove)
+        {
+          //TODO handle the 2 bytes of the GoalPosition/CurrentPosition
+          if ((controlTable[currentCommandId][GoalPosition] > controlTable[currentCommandId][CurrentPosition]) && (YoupiSens[currentCommandId] == -1))
+          {
+            scheduleAt = time + 70000;
+            command = 0;
+            commandId = currentCommandId;
+            commandValue = 1;
+          }
+          else if ((controlTable[currentCommandId][GoalPosition] < controlTable[currentCommandId][CurrentPosition]) && (YoupiSens[currentCommandId] == 1))
+          {
+            scheduleAt = time + 70000;
+            command = 0;
+            commandId = currentCommandId;
+            commandValue = -1;
+          }
+          else
+          {
+
+            command = 1;
+            commandId = currentCommandId;
+          //  commandValue = 10;
+            scheduleAt = time + 70000;
+          }
+        }
+        Serial.write(0xFF);
+        Serial.write(0xFF);
+        Serial.write(currentCommandId);
+        Serial.write(0x02);
+        Serial.write(0x00);
+        char checksum = ~(currentCommandId + 2);
         Serial.write(checksum);
         break;
       }
     }
   }
   //TODO handle broadcast Id
- 
+
 }
 void loop()
 {
@@ -144,7 +212,7 @@ void loop()
   if (Serial.available() > 0) {
     // get incoming byte:
     inByte = Serial.read();
-    
+
     switch (CommandReceptionState)
     {
       case WAITINGFIRSTBYTE:
@@ -158,11 +226,11 @@ void loop()
         {
           CommandReceptionState = 0;
         }
-        break; 
+        break;
       }
       case WAITINGID:
       {
-        
+
         currentCommandId = inByte;
         CommandReceptionState += 1;
         break;
@@ -176,7 +244,7 @@ void loop()
       }
       case WAITINGINSTRUCTION:
       {
-        
+
         currentCommandInstruction = inByte;
         CommandReceptionState += 1;
         if (parametersStillToReceive == 0)
@@ -184,7 +252,7 @@ void loop()
           CommandReceptionState += 1;
         }
         break;
-      }      
+      }
       case WAITINGPARAMETERS:
       {
         currentParameters[currentParameterToFill] = inByte;
@@ -195,15 +263,15 @@ void loop()
           CommandReceptionState += 1;
         }
         break;
-      }   
+      }
       case WAITINGCHECKSUM:
       {
-        
+
         processCommand();
         CommandReceptionState = 0;
         currentParameterToFill = 0;
         break;
-      }       
+      }
     }
   }
 //    int steps = 10;
@@ -231,60 +299,70 @@ void loop()
 //    }
 }
 
-ISR(TIMER1_OVF_VECT)
-{
 
-}
 ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
 {
   static int sign = 1;
   cli();
-  if (scheduleIn == ULONG_MAX)
-    return;
-  if(scheduleIn > 65536)
+  time += OCR1A;
+
+  if (abs(scheduleAt - time) < 10)
   {
-    scheduleIn -= 65536;
-    if (scheduleIn > 65536)
+
+    if (command == 0)
     {
-      OCR1A = TCNT1-1;
+      if (commandStart == true)
+      {
+            digitalWrite(13,HIGH);
+            commandStart = false;
+            scheduleAt  = time + baudRate;
+      }
+      else
+      {
+            digitalWrite(13,LOW);
+            commandStart = true;
+
+            YoupiSens[commandId] = commandValue;
+            command = 1;
+            commandId = commandId;
+      //      commandValue = 10;
+            scheduleAt = time + baudRate;
+
+      }
     }
-    else
+    else if (command == 1)
     {
-      OCR1A  = (TCNT1 + scheduleIn)%65536;
-    }    
+      if (commandStart == true)
+      {
+            digitalWrite(13,HIGH);
+            commandStart = false;
+            scheduleAt  = time + baudRate;
+      }
+      else
+      {
+            digitalWrite(13,LOW);
+            commandStart = true;
+            YoupiPosition[commandId] += YoupiSens[commandId];
+            controlTable[commandId][CurrentPosition] = YoupiPosition[commandId]/10;
+            if (controlTable[commandId][CurrentPosition] == controlTable[commandId][GoalPosition])
+            {
+              scheduleAt  = ULONG_MAX;
+            }
+            else
+            {
+              scheduleAt = time + 70000;
+            }
+
+      }
+    }
+  }
+  if ((scheduleAt - time) < 65535)
+  {
+    OCR1A = (scheduleAt - time);
   }
   else
   {
-
-    if (scheduleIn > 65536)
-    {
-      OCR1A = TCNT1-1;
-    }
-    else
-    {
-      OCR1A  = (TCNT1 + scheduleIn)%65536;
-    }
-    timerstep= timerstep+10000*sign;
-    if (timerstep > 4000000)
-    {
-      sign = -1;
-    }
-    if (timerstep < 2000)
-    {
-      sign = 1;
-    }
-    if (digitalRead(13) == LOW)
-    {
-      digitalWrite(13,HIGH);
-      scheduleIn = 3000000;
-    }
-    else 
-    {
-      digitalWrite(13,LOW);
- //     scheduleIn = ULONG_MAX;
-    }
-
+    OCR1A = 65535;
   }
-
   sei();
 }
