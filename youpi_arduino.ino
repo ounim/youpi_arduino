@@ -86,7 +86,7 @@ unsigned char command;
 unsigned char commandValue;
 unsigned char commandId;
 bool commandStart = true;
-unsigned long baudRate = 100;
+unsigned long baudRate = 100000;
 
 void parallelOutput(int number)
 {
@@ -103,8 +103,8 @@ void setup() {
     {
         pinMode(D[i], OUTPUT);
     }
-   parallelOutput(0x47);
-   parallelOutput(0x00);
+//    parallelOutput(0x47);
+//    parallelOutput(0x00);
 
     // initialize timer1
     cli();           // disable all interrupts
@@ -128,10 +128,10 @@ void processCommand()
       {
         Serial.write(0xFF);
         Serial.write(0xFF);
-        Serial.write(currentCommandId + 1);
+        Serial.write(currentCommandId);
         Serial.write(0x02);
         Serial.write(0x00);
-        char checksum = ~(currentCommandId + 1 + 2);
+        char checksum = ~(currentCommandId + 2);
         Serial.write(checksum);
         break;
       }
@@ -139,8 +139,8 @@ void processCommand()
       {
         Serial.write(0xFF);
         Serial.write(0xFF);
-        Serial.write(currentCommandId + 1);
-        char checksum = currentCommandId + 1;
+        Serial.write(currentCommandId);
+        char checksum = currentCommandId;
         Serial.write(currentParameters[1] + 2);
         checksum += currentParameters[1] + 2;
         Serial.write(0x00);
@@ -188,15 +188,15 @@ void processCommand()
             command = 1;
             commandId = currentCommandId;
           //  commandValue = 10;
-            scheduleAt = time + 700000;
+            scheduleAt = time + 70000;
           }
         }
         Serial.write(0xFF);
         Serial.write(0xFF);
-        Serial.write(currentCommandId + 1);
+        Serial.write(currentCommandId);
         Serial.write(0x02);
         Serial.write(0x00);
-        char checksum = ~(currentCommandId + 1 + 2);
+        char checksum = ~(currentCommandId + 2);
         Serial.write(checksum);
         break;
       }
@@ -231,7 +231,7 @@ void loop()
       case WAITINGID:
       {
 
-        currentCommandId = inByte - 1; // diminish the Id to have starting from 0
+        currentCommandId = inByte;
         CommandReceptionState += 1;
         break;
       }
@@ -313,37 +313,19 @@ ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
     {
       if (commandStart == true)
       {
-             YoupiSens[commandId] = commandValue;
-           // digitalWrite(13,HIGH);
-            int i;
-            char command = 0x80;
-            for (i = 0; i < 6; ++i)
-            {
-              if (YoupiSens[i] == 1)
-              {
-                command |= 1 << (i - 1);
-              }
-            }
+            digitalWrite(13,HIGH);
             commandStart = false;
             scheduleAt  = time + baudRate;
       }
       else
       {
-          //          digitalWrite(13,LOW);
-            int i;
-            char command = 0x00;
-            for (i = 0; i < 6; ++i)
-            {
-              if (YoupiSens[i] == 1)
-              {
-                command |= 1 << (i-1);
-              }
-            }
-            parallelOutput(0x3F);
+            digitalWrite(13,LOW);
             commandStart = true;
 
+            YoupiSens[commandId] = commandValue;
             command = 1;
             commandId = commandId;
+      //      commandValue = 10;
             scheduleAt = time + baudRate;
 
       }
@@ -352,15 +334,13 @@ ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
     {
       if (commandStart == true)
       {
-            //digitalWrite(13,HIGH);
-            parallelOutput(0x40+commandId +1); //moteur id start at 1
+            digitalWrite(13,HIGH);
             commandStart = false;
             scheduleAt  = time + baudRate;
       }
       else
       {
-            //digitalWrite(13,LOW);
-            parallelOutput(0x00+commandId +1); //moteur id start at 1
+            digitalWrite(13,LOW);
             commandStart = true;
             YoupiPosition[commandId] += YoupiSens[commandId];
             controlTable[commandId][CurrentPosition] = YoupiPosition[commandId]/10;
@@ -370,7 +350,7 @@ ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
             }
             else
             {
-              scheduleAt = time + 700000;
+              scheduleAt = time + 70000;
             }
 
       }
