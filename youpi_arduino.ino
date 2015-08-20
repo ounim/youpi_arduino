@@ -72,8 +72,10 @@ char parametersStillToReceive = 0;
 char currentParameters[255];
 char currentParameterToFill = 0;
 
+//to check -> more than 256 in value command
+//less than 70000 to start the command
 
-char controlTable[6][50] = {{12,0,0,1,1,250,0,0,255,3,0,85,60,190,255,3,2,4,4,0,0,0,0,0,0,0,0,0,32,32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,32,0},
+unsigned char controlTable[6][50] = {{12,0,0,1,1,250,0,0,255,3,0,85,60,190,255,3,2,4,4,0,0,0,0,0,0,0,0,0,32,32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,32,0},
 {12,0,0,1,1,250,0,0,255,3,0,85,60,190,255,3,2,4,4,0,0,0,0,0,0,0,0,0,32,32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,32,0},
 {12,0,0,1,1,250,0,0,255,3,0,85,60,190,255,3,2,4,4,0,0,0,0,0,0,0,0,0,32,32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,32,0},
 {12,0,0,1,1,250,0,0,255,3,0,85,60,190,255,3,2,4,4,0,0,0,0,0,0,0,0,0,32,32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,32,0},
@@ -86,7 +88,8 @@ unsigned char command;
 unsigned char commandValue;
 unsigned char commandId;
 bool commandStart = true;
-unsigned long baudRate = 100000;
+unsigned long baudRate = 10000;
+long vitesse = 70000;
 
 void parallelOutput(int number)
 {
@@ -103,8 +106,8 @@ void setup() {
     {
         pinMode(D[i], OUTPUT);
     }
-//    parallelOutput(0x47);
-//    parallelOutput(0x00);
+   parallelOutput(0x47);
+   parallelOutput(0x00);
 
     // initialize timer1
     cli();           // disable all interrupts
@@ -128,10 +131,10 @@ void processCommand()
       {
         Serial.write(0xFF);
         Serial.write(0xFF);
-        Serial.write(currentCommandId);
+        Serial.write(currentCommandId + 1);
         Serial.write(0x02);
         Serial.write(0x00);
-        char checksum = ~(currentCommandId + 2);
+        char checksum = ~(currentCommandId + 1 + 2);
         Serial.write(checksum);
         break;
       }
@@ -139,8 +142,8 @@ void processCommand()
       {
         Serial.write(0xFF);
         Serial.write(0xFF);
-        Serial.write(currentCommandId);
-        char checksum = currentCommandId;
+        Serial.write(currentCommandId + 1);
+        char checksum = currentCommandId + 1;
         Serial.write(currentParameters[1] + 2);
         checksum += currentParameters[1] + 2;
         Serial.write(0x00);
@@ -170,14 +173,12 @@ void processCommand()
           //TODO handle the 2 bytes of the GoalPosition/CurrentPosition
           if ((controlTable[currentCommandId][GoalPosition] > controlTable[currentCommandId][CurrentPosition]) && (YoupiSens[currentCommandId] == -1))
           {
-            scheduleAt = time + 70000;
             command = 0;
             commandId = currentCommandId;
             commandValue = 1;
           }
           else if ((controlTable[currentCommandId][GoalPosition] < controlTable[currentCommandId][CurrentPosition]) && (YoupiSens[currentCommandId] == 1))
           {
-            scheduleAt = time + 70000;
             command = 0;
             commandId = currentCommandId;
             commandValue = -1;
@@ -188,15 +189,15 @@ void processCommand()
             command = 1;
             commandId = currentCommandId;
           //  commandValue = 10;
-            scheduleAt = time + 70000;
           }
+          scheduleAt = time + vitesse;
         }
         Serial.write(0xFF);
         Serial.write(0xFF);
-        Serial.write(currentCommandId);
+        Serial.write(currentCommandId + 1);
         Serial.write(0x02);
         Serial.write(0x00);
-        char checksum = ~(currentCommandId + 2);
+        char checksum = ~(currentCommandId + 1 + 2);
         Serial.write(checksum);
         break;
       }
@@ -231,7 +232,7 @@ void loop()
       case WAITINGID:
       {
 
-        currentCommandId = inByte;
+        currentCommandId = inByte - 1; // diminish the Id to have starting from 0
         CommandReceptionState += 1;
         break;
       }
@@ -313,20 +314,38 @@ ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
     {
       if (commandStart == true)
       {
-            digitalWrite(13,HIGH);
+             YoupiSens[commandId] = commandValue;
+           // digitalWrite(13,HIGH);
+            int i;
+            char output = 0x80;
+            for (i = 0; i < 6; ++i)
+            {
+              if (YoupiSens[i] == 1)
+              {
+                output |= 1 << (i);
+              }
+            }
+            parallelOutput(output);
             commandStart = false;
             scheduleAt  = time + baudRate;
       }
       else
       {
-            digitalWrite(13,LOW);
+          //          digitalWrite(13,LOW);
+            int i;
+            char output = 0x00;
+            for (i = 0; i < 6; ++i)
+            {
+              if (YoupiSens[i] == 1)
+              {
+                output |= 1 << (i);
+              }
+            }
+            parallelOutput(output);
             commandStart = true;
 
-            YoupiSens[commandId] = commandValue;
             command = 1;
-            commandId = commandId;
-      //      commandValue = 10;
-            scheduleAt = time + baudRate;
+            scheduleAt = time + vitesse;
 
       }
     }
@@ -334,13 +353,15 @@ ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
     {
       if (commandStart == true)
       {
-            digitalWrite(13,HIGH);
+            //digitalWrite(13,HIGH);
+            parallelOutput(0x40+commandId); //moteur id start at 1
             commandStart = false;
             scheduleAt  = time + baudRate;
       }
       else
       {
-            digitalWrite(13,LOW);
+            //digitalWrite(13,LOW);
+            parallelOutput(0x00+commandId); //moteur id start at 1
             commandStart = true;
             YoupiPosition[commandId] += YoupiSens[commandId];
             controlTable[commandId][CurrentPosition] = YoupiPosition[commandId]/10;
@@ -350,7 +371,7 @@ ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
             }
             else
             {
-              scheduleAt = time + 70000;
+              scheduleAt = time + vitesse;
             }
 
       }
