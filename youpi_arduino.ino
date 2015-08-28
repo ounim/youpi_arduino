@@ -58,7 +58,7 @@
 #define Punch 48
 
 const int D[8] =  {13, 12, 11, 10, 9, 8, 7, 6};
-volatile unsigned long long scheduleAt = 9223372036854775807LL;
+
 //unsigned long scheduleAt = 70000;
 unsigned long long time = 0;
 long timerstep = 1;
@@ -82,12 +82,54 @@ unsigned char controlTable[6][50] = {{12,0,0,1,1,250,0,0,255,3,0,85,60,190,255,3
 {12,0,0,1,1,250,0,0,255,3,0,85,60,190,255,3,2,4,4,0,0,0,0,0,0,0,0,0,32,32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,32,0},
 {12,0,0,1,1,250,0,0,255,3,0,85,60,190,255,3,2,4,4,0,0,0,0,0,0,0,0,0,32,32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,32,0}};
 
+unsigned short getShortInControlTableForMotor(char motor, char parameter)
+{
+  return (((short)controlTable[motor][parameter]) || ((short)(controlTable[motor][parameter + 1]) << 8));
+}
+
+void setShortInControlTableForMotor(char motor, char parameter, short Position)
+{
+  controlTable[motor][parameter] = Position & 0xFF;
+  controlTable[motor][parameter + 1] = Position >> 8;
+}
+
+unsigned short getPositionOfMotor(char motor)
+{
+  return getShortInControlTableForMotor(motor, CurrentPosition);
+}
+
+void setPositionOfMotor(char motor, short Position)
+{
+  setShortInControlTableForMotor(motor, CurrentPosition, Position);
+}
+
+unsigned short getVitesseOfMotor(char motor)
+{
+  return getShortInControlTableForMotor(motor, CurrentSpeed);
+}
+
+unsigned short getGoalOfMotor(char motor)
+{
+  return getShortInControlTableForMotor(motor, GoalPosition);
+}
+
+void setGoalOfMotor(char motor, short Position)
+{
+  setShortInControlTableForMotor(motor, GoalPosition, Position);
+}
+
 long YoupiPosition[6] = {0,0,0,0,0,0};
 char YoupiSens[6] = {1,1,1,1,1,1};
-unsigned char command;
-unsigned char commandValue;
-unsigned char commandId;
-bool commandStart = true;
+struct Command
+{
+unsigned long long scheduleAt;
+unsigned char order; //which command to execute
+unsigned char value;//parameter of the command if needed
+unsigned char id;//id of the motor
+bool toStart;
+};
+Command command[6];
+
 unsigned long baudRate = 10000;
 long vitesse = 70000;
 
@@ -101,6 +143,11 @@ void parallelOutput(int number)
 }
 
 void setup() {
+  for (int i = 0; i < 6; ++i)
+  {
+    command[i].scheduleAt = 9223372036854775807LL;
+    command[i].toStart = true;
+  }
   // set the digital pin as output:
     for (int i = 0; i< 8; ++i)
     {
@@ -171,26 +218,23 @@ void processCommand()
         if (willMove)
         {
           //TODO handle the 2 bytes of the GoalPosition/CurrentPosition
-          if ((controlTable[currentCommandId][GoalPosition] > controlTable[currentCommandId][CurrentPosition]) && (YoupiSens[currentCommandId] == -1))
+          if ((getGoalOfMotor(currentCommandId) > getPositionOfMotor(currentCommandId)) && (YoupiSens[currentCommandId] == -1))
           {
-            command = 0;
-            commandId = currentCommandId;
-            commandValue = 1;
+            command[0].order = 0;
+            command[0].value = 1;
           }
-          else if ((controlTable[currentCommandId][GoalPosition] < controlTable[currentCommandId][CurrentPosition]) && (YoupiSens[currentCommandId] == 1))
+          else if ((getGoalOfMotor(currentCommandId) < getPositionOfMotor(currentCommandId)) && (YoupiSens[currentCommandId] == 1))
           {
-            command = 0;
-            commandId = currentCommandId;
-            commandValue = -1;
+            command[0].order = 0;
+            command[0].value = -1;
           }
           else
           {
-
-            command = 1;
-            commandId = currentCommandId;
-          //  commandValue = 10;
+            command[0].order = 1;           
           }
-          scheduleAt = time + vitesse;
+          command[0].id = currentCommandId;
+          command[0].scheduleAt = time + vitesse;
+          command[0].toStart = true;
         }
         Serial.write(0xFF);
         Serial.write(0xFF);
@@ -275,29 +319,6 @@ void loop()
       }
     }
   }
-//    int steps = 10;
-//    //Orders earch motor to rotate
-//    for(int j=0; j<6; j++) {
-//        //...into one direction
-//        //1-0-sens moteur6-sens moteur5-sens moteur4-sens moteur3-sens moteur2-sens moteur1
-//        parallelOutput(0x80);
-//        //0-0-sens moteur6-sens moteur5-sens moteur4-sens moteur3-sens moteur2-sens moteur1
-//        parallelOutput(0x00);
-//        for(int i=0; i<steps; i++) {
-//            //0-1-X-X-X-numero du moteur en binaire
-//            parallelOutput(0x40+j);
-//            //0-0-X-X-X-numero du moteur en binaire
-//            parallelOutput(0x00+j);
-//        }
-//
-//        //...into the opposite direction
-//        parallelOutput(0xBF);
-//        parallelOutput(0x3F);
-//        for(int i=0; i<steps; i++) {
-//            parallelOutput(0x40+j);
-//            parallelOutput(0x00+j);
-//        }
-//    }
 }
 
 
@@ -307,15 +328,14 @@ ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
   cli();
   time += OCR1A;
 
-  if (abs(scheduleAt - time) < 10)
+  if (abs(command[0].scheduleAt - time) < 10)
   {
 
-    if (command == 0)
+    if (command[0].order == 0)
     {
-      if (commandStart == true)
+      if (command[0].toStart == true)
       {
-             YoupiSens[commandId] = commandValue;
-           // digitalWrite(13,HIGH);
+             YoupiSens[command[0].id] = command[0].value;
             int i;
             char output = 0x80;
             for (i = 0; i < 6; ++i)
@@ -326,12 +346,11 @@ ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
               }
             }
             parallelOutput(output);
-            commandStart = false;
-            scheduleAt  = time + baudRate;
+            command[0].toStart = false;
+            command[0].scheduleAt  = time + baudRate;
       }
       else
       {
-          //          digitalWrite(13,LOW);
             int i;
             char output = 0x00;
             for (i = 0; i < 6; ++i)
@@ -342,44 +361,43 @@ ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
               }
             }
             parallelOutput(output);
-            commandStart = true;
+            command[0].toStart = true;
 
-            command = 1;
-            scheduleAt = time + vitesse;
+            command[0].order = 1;
+            command[0].scheduleAt = time + getVitesseOfMotor(command[0].id);
 
       }
     }
-    else if (command == 1)
+    else if (command[0].order == 1)
     {
-      if (commandStart == true)
+      if (command[0].toStart == true)
       {
-            //digitalWrite(13,HIGH);
-            parallelOutput(0x40+commandId); //moteur id start at 1
-            commandStart = false;
-            scheduleAt  = time + baudRate;
+            parallelOutput(0x40+command[0].id); //moteur id start at 1
+            command[0].toStart = false;
+            command[0].scheduleAt  = time + baudRate;
       }
       else
       {
-            //digitalWrite(13,LOW);
-            parallelOutput(0x00+commandId); //moteur id start at 1
-            commandStart = true;
-            YoupiPosition[commandId] += YoupiSens[commandId];
-            controlTable[commandId][CurrentPosition] = YoupiPosition[commandId]/10;
-            if (controlTable[commandId][CurrentPosition] == controlTable[commandId][GoalPosition])
+            parallelOutput(0x00+command[0].id); //moteur id start at 1
+            command[0].toStart = true;
+            YoupiPosition[command[0].id] += YoupiSens[command[0].id];
+            setPositionOfMotor(command[0].id, YoupiPosition[command[0].id]/10);
+            
+            if (getPositionOfMotor(command[0].id) == getGoalOfMotor(command[0].id))
             {
-              scheduleAt  = ULONG_MAX;
+              command[0].scheduleAt  = ULONG_MAX;
             }
             else
             {
-              scheduleAt = time + vitesse;
+              command[0].scheduleAt = time + getVitesseOfMotor(command[0].id);
             }
 
       }
     }
   }
-  if ((scheduleAt - time) < 65535)
+  if ((command[0].scheduleAt - time) < 65535)
   {
-    OCR1A = (scheduleAt - time);
+    OCR1A = (command[0].scheduleAt - time);
   }
   else
   {
