@@ -118,8 +118,11 @@ void setGoalOfMotor(unsigned char motor, short Position)
   setShortInControlTableForMotor(motor, GoalPosition, Position);
 }
 
+// Replicate the state of Youpi arm for the position of the step motor
+// and the direction of moving for each motor
 long YoupiPosition[6] = {0,0,0,0,0,0};
 unsigned char YoupiSens[6] = {1,1,1,1,1,1};
+
 struct Command
 {
 unsigned long long scheduleAt;
@@ -128,6 +131,20 @@ unsigned char value;//parameter of the command if needed
 unsigned char id;//id of the motor
 bool toStart;
 };
+
+struct RegisteredCommand
+{
+    unsigned char id;
+    unsigned char instruction;
+    unsigned char numberOfParameters;
+    unsigned char parameters[255];
+};
+
+//To be executed at the next action order
+RegisteredCommand registeredCommand[6];
+unsigned char numberOfRegisteredCommand = 0;
+
+//Current running command
 Command command[6];
 
 unsigned long baudRate = 10000;
@@ -217,24 +234,23 @@ void processCommand()
          }
         if (willMove)
         {
-          //TODO handle the 2 bytes of the GoalPosition/CurrentPosition
           if ((getGoalOfMotor(currentCommandId) > getPositionOfMotor(currentCommandId)) && (YoupiSens[currentCommandId] == -1))
           {
-            command[0].order = 0;
-            command[0].value = 1;
+            command[currentCommandId].order = 0;
+            command[currentCommandId].value = 1;
           }
           else if ((getGoalOfMotor(currentCommandId) < getPositionOfMotor(currentCommandId)) && (YoupiSens[currentCommandId] == 1))
           {
-            command[0].order = 0;
-            command[0].value = -1;
+            command[currentCommandId].order = 0;
+            command[currentCommandId].value = -1;
           }
           else
           {
-            command[0].order = 1;
+            command[currentCommandId].order = 1;
           }
-          command[0].id = currentCommandId;
-          command[0].scheduleAt = time + vitesse;
-          command[0].toStart = true;
+          command[currentCommandId].id = currentCommandId;
+          command[currentCommandId].scheduleAt = time + vitesse;
+          command[currentCommandId].toStart = true;
         }
         Serial.write(0xFF);
         Serial.write(0xFF);
@@ -244,6 +260,64 @@ void processCommand()
         unsigned char checksum = ~(currentCommandId + 1 + 2);
         Serial.write(checksum);
         break;
+      }
+    case REG_WRITE:
+      {         //Register the command
+          registeredCommand[numberOfRegisteredCommand].id = currentCommandId;
+          registeredCommand[numberOfRegisteredCommand].instruction = WRITE_DATA;
+          registeredCommand[numberOfRegisteredCommand].numberOfParameters = currentCommandLength - 2;
+          for (int i = 0; i< currentCommandLength -2 ; ++i)
+          {
+              registeredCommand[numberOfRegisteredCommand].parameters[i] = currentParameters[i];
+          }
+          numberOfRegisteredCommand +=1;
+          Serial.write(0xFF);
+          Serial.write(0xFF);
+          Serial.write(currentCommandId + 1);
+          Serial.write(0x02);
+          Serial.write(0x00);
+          unsigned char checksum = ~(currentCommandId + 1 + 2);
+          Serial.write(checksum);
+          break;
+      }
+    case ACTION:
+      {
+          for (int commandIter = 0; commandIter< numberOfRegisteredCommand; ++commandIter)
+          {
+              RegisteredCommand* aCommand = &registeredCommand[commandIter];
+              bool willMove = false;
+              for (int i = 0; i< registeredCommand[commandIter].numberOfParameters ; ++i)
+              {
+                  int controlId = registeredCommand[commandIter].parameters[0] + i;
+                  if (controlId == 30 || controlId == 31)
+                  {
+                      willMove = true;
+                  }
+                  controlTable[currentCommandId][controlId] = registeredCommand[commandIter].parameters[i + 1 ];
+              }
+              if (willMove)
+              {
+                  int commandId = registeredCommand[commandIter].id;
+                  if ((getGoalOfMotor(commandId) > getPositionOfMotor(commandId)) && (YoupiSens[commandId] == -1))
+                  {
+                      command[commandId].order = 0;
+                      command[commandId].value = 1;
+                  }
+                  else if ((getGoalOfMotor(commandId) < getPositionOfMotor(commandId)) && (YoupiSens[commandId] == 1))
+                  {
+                      command[commandId].order = 0;
+                      command[commandId].value = -1;
+                  }
+                  else
+                  {
+                      command[commandId].order = 1;
+                  }
+                  command[commandId].id = commandId;
+                  command[commandId].scheduleAt = time + vitesse;
+                  command[commandId].toStart = true;
+              }
+          }
+          numberOfRegisteredCommand = 0;
       }
     }
   }
