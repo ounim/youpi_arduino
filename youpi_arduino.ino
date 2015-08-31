@@ -187,7 +187,8 @@ void setup() {
 
 void processCommand()
 {
-  if (currentCommandId < 10)
+    //for one motor or broadcast ID
+  if (currentCommandId < 6 || currentCommandId = 0xFE)
   {
     switch(currentCommandInstruction)
     {
@@ -321,8 +322,6 @@ void processCommand()
       }
     }
   }
-  //TODO handle broadcast Id
-
 }
 void loop()
 {
