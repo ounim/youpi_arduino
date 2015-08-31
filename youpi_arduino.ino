@@ -64,13 +64,13 @@ unsigned long long time = 0;
 long timerstep = 1;
 
 //Command parameters and state machine
-char CommandReceptionState = WAITINGFIRSTBYTE;
-char currentCommandId = 0;
-char currentCommandLength = 0;
-char currentCommandInstruction = 0;
-char parametersStillToReceive = 0;
-char currentParameters[255];
-char currentParameterToFill = 0;
+unsigned char CommandReceptionState = WAITINGFIRSTBYTE;
+unsigned char currentCommandId = 0;
+unsigned char currentCommandLength = 0;
+unsigned char currentCommandInstruction = 0;
+unsigned char parametersStillToReceive = 0;
+unsigned char currentParameters[255];
+unsigned char currentParameterToFill = 0;
 
 //to check -> more than 256 in value command
 //less than 70000 to start the command
@@ -82,44 +82,44 @@ unsigned char controlTable[6][50] = {{12,0,0,1,1,250,0,0,255,3,0,85,60,190,255,3
 {12,0,0,1,1,250,0,0,255,3,0,85,60,190,255,3,2,4,4,0,0,0,0,0,0,0,0,0,32,32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,32,0},
 {12,0,0,1,1,250,0,0,255,3,0,85,60,190,255,3,2,4,4,0,0,0,0,0,0,0,0,0,32,32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,32,0}};
 
-unsigned short getShortInControlTableForMotor(char motor, char parameter)
+unsigned short getShortInControlTableForMotor(unsigned char motor, unsigned char parameter)
 {
   return (((short)controlTable[motor][parameter]) || ((short)(controlTable[motor][parameter + 1]) << 8));
 }
 
-void setShortInControlTableForMotor(char motor, char parameter, short Position)
+void setShortInControlTableForMotor(unsigned char motor, unsigned char parameter, short Position)
 {
   controlTable[motor][parameter] = Position & 0xFF;
   controlTable[motor][parameter + 1] = Position >> 8;
 }
 
-unsigned short getPositionOfMotor(char motor)
+unsigned short getPositionOfMotor(unsigned char motor)
 {
   return getShortInControlTableForMotor(motor, CurrentPosition);
 }
 
-void setPositionOfMotor(char motor, short Position)
+void setPositionOfMotor(unsigned char motor, short Position)
 {
   setShortInControlTableForMotor(motor, CurrentPosition, Position);
 }
 
-unsigned short getVitesseOfMotor(char motor)
+unsigned short getVitesseOfMotor(unsigned char motor)
 {
   return getShortInControlTableForMotor(motor, CurrentSpeed);
 }
 
-unsigned short getGoalOfMotor(char motor)
+unsigned short getGoalOfMotor(unsigned char motor)
 {
   return getShortInControlTableForMotor(motor, GoalPosition);
 }
 
-void setGoalOfMotor(char motor, short Position)
+void setGoalOfMotor(unsigned char motor, short Position)
 {
   setShortInControlTableForMotor(motor, GoalPosition, Position);
 }
 
 long YoupiPosition[6] = {0,0,0,0,0,0};
-char YoupiSens[6] = {1,1,1,1,1,1};
+unsigned char YoupiSens[6] = {1,1,1,1,1,1};
 struct Command
 {
 unsigned long long scheduleAt;
@@ -181,7 +181,7 @@ void processCommand()
         Serial.write(currentCommandId + 1);
         Serial.write(0x02);
         Serial.write(0x00);
-        char checksum = ~(currentCommandId + 1 + 2);
+        unsigned char checksum = ~(currentCommandId + 1 + 2);
         Serial.write(checksum);
         break;
       }
@@ -190,7 +190,7 @@ void processCommand()
         Serial.write(0xFF);
         Serial.write(0xFF);
         Serial.write(currentCommandId + 1);
-        char checksum = currentCommandId + 1;
+        unsigned char checksum = currentCommandId + 1;
         Serial.write(currentParameters[1] + 2);
         checksum += currentParameters[1] + 2;
         Serial.write(0x00);
@@ -230,7 +230,7 @@ void processCommand()
           }
           else
           {
-            command[0].order = 1;           
+            command[0].order = 1;
           }
           command[0].id = currentCommandId;
           command[0].scheduleAt = time + vitesse;
@@ -241,7 +241,7 @@ void processCommand()
         Serial.write(currentCommandId + 1);
         Serial.write(0x02);
         Serial.write(0x00);
-        char checksum = ~(currentCommandId + 1 + 2);
+        unsigned char checksum = ~(currentCommandId + 1 + 2);
         Serial.write(checksum);
         break;
       }
@@ -321,87 +321,98 @@ void loop()
   }
 }
 
-
-ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
+void executeCommand(unsigned char commandId)
 {
-  static int sign = 1;
-  cli();
-  time += OCR1A;
 
-  if (abs(command[0].scheduleAt - time) < 10)
-  {
-
-    if (command[0].order == 0)
+    if (command[commandId].order == 0)
     {
-      if (command[0].toStart == true)
-      {
-             YoupiSens[command[0].id] = command[0].value;
+        if (command[commandId].toStart == true)
+        {
+            YoupiSens[command[commandId].id] = command[commandId].value;
             int i;
-            char output = 0x80;
+            unsigned char output = 0x80;
             for (i = 0; i < 6; ++i)
             {
-              if (YoupiSens[i] == 1)
-              {
-                output |= 1 << (i);
-              }
+                if (YoupiSens[i] == 1)
+                {
+                    output |= 1 << (i);
+                }
             }
             parallelOutput(output);
-            command[0].toStart = false;
-            command[0].scheduleAt  = time + baudRate;
-      }
-      else
-      {
+            command[commandId].toStart = false;
+            command[commandId].scheduleAt  = time + baudRate;
+        }
+        else
+        {
             int i;
-            char output = 0x00;
+            unsigned char output = 0x00;
             for (i = 0; i < 6; ++i)
             {
-              if (YoupiSens[i] == 1)
-              {
-                output |= 1 << (i);
-              }
+                if (YoupiSens[i] == 1)
+                {
+                    output |= 1 << (i);
+                }
             }
             parallelOutput(output);
-            command[0].toStart = true;
+            command[commandId].toStart = true;
 
-            command[0].order = 1;
-            command[0].scheduleAt = time + getVitesseOfMotor(command[0].id);
+            command[commandId].order = 1;
+            command[commandId].scheduleAt = time + getVitesseOfMotor(command[commandId].id);
 
-      }
+        }
     }
-    else if (command[0].order == 1)
+    else if (command[commandId].order == 1)
     {
-      if (command[0].toStart == true)
-      {
-            parallelOutput(0x40+command[0].id); //moteur id start at 1
-            command[0].toStart = false;
-            command[0].scheduleAt  = time + baudRate;
-      }
-      else
-      {
-            parallelOutput(0x00+command[0].id); //moteur id start at 1
-            command[0].toStart = true;
-            YoupiPosition[command[0].id] += YoupiSens[command[0].id];
-            setPositionOfMotor(command[0].id, YoupiPosition[command[0].id]/10);
-            
-            if (getPositionOfMotor(command[0].id) == getGoalOfMotor(command[0].id))
+        if (command[commandId].toStart == true)
+        {
+            parallelOutput(0x40+command[commandId].id); //moteur id start at 1
+            command[commandId].toStart = false;
+            command[commandId].scheduleAt  = time + baudRate;
+        }
+        else
+        {
+            parallelOutput(0x00+command[commandId].id); //moteur id start at 1
+            command[commandId].toStart = true;
+            YoupiPosition[command[commandId].id] += YoupiSens[command[commandId].id];
+            setPositionOfMotor(command[commandId].id, YoupiPosition[command[commandId].id]/10);
+
+            if (getPositionOfMotor(command[commandId].id) == getGoalOfMotor(command[commandId].id))
             {
-              command[0].scheduleAt  = ULONG_MAX;
+                command[commandId].scheduleAt  = ULONG_MAX;
             }
             else
             {
-              command[0].scheduleAt = time + getVitesseOfMotor(command[0].id);
+                command[commandId].scheduleAt = time + getVitesseOfMotor(command[commandId].id);
             }
 
-      }
+        }
     }
-  }
-  if ((command[0].scheduleAt - time) < 65535)
+}
+
+
+ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
+{
+  cli();
+  time += OCR1A;
+
+  for (int i=0;i < 6; ++i)
   {
-    OCR1A = (command[0].scheduleAt - time);
+      if (abs(command[i].scheduleAt - time) < 10)
+      {
+          executeCommand(i);
+      }
   }
-  else
+
+  unsigned int nextInterruptTime = 65535;
+  for (int i=0;i < 6; ++i)
   {
-    OCR1A = 65535;
+      if ((command[i].scheduleAt - time) < nextInterruptTime)
+      {
+          nextInterruptTime = command[i].scheduleAt - time;
+      }
   }
+
+  OCR1A = nextInterruptTime;
+
   sei();
 }
