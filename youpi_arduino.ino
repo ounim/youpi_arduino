@@ -69,7 +69,7 @@ unsigned char currentCommandId = 0;
 unsigned char currentCommandLength = 0;
 unsigned char currentCommandInstruction = 0;
 unsigned char parametersStillToReceive = 0;
-unsigned char currentParameters[255];
+unsigned char currentParameters[10];
 unsigned char currentParameterToFill = 0;
 
 //to check -> more than 256 in value command
@@ -84,7 +84,7 @@ unsigned char controlTable[6][50] = {{12,0,0,1,1,250,0,0,255,3,0,85,60,190,255,3
 
 unsigned short getShortInControlTableForMotor(unsigned char motor, unsigned char parameter)
 {
-  return (((short)controlTable[motor][parameter]) || ((short)(controlTable[motor][parameter + 1]) << 8));
+  return (((short)controlTable[motor][parameter]) | ((short)(controlTable[motor][parameter + 1]) << 8));
 }
 
 void setShortInControlTableForMotor(unsigned char motor, unsigned char parameter, short Position)
@@ -103,9 +103,15 @@ void setPositionOfMotor(unsigned char motor, short Position)
   setShortInControlTableForMotor(motor, CurrentPosition, Position);
 }
 
-unsigned short getVitesseOfMotor(unsigned char motor)
+long getVitesseOfMotor(unsigned char motor)
 {
-  return getShortInControlTableForMotor(motor, CurrentSpeed);
+  static long vitesse = 70000;
+  return vitesse;
+  int control = getShortInControlTableForMotor(motor, MovingSpeed);
+  if (control == 0)
+    return vitesse;
+  else
+    return vitesse/control;
 }
 
 unsigned short getGoalOfMotor(unsigned char motor)
@@ -121,7 +127,7 @@ void setGoalOfMotor(unsigned char motor, short Position)
 // Replicate the state of Youpi arm for the position of the step motor
 // and the direction of moving for each motor
 long YoupiPosition[6] = {0,0,0,0,0,0};
-unsigned char YoupiSens[6] = {1,1,1,1,1,1};
+signed char YoupiSens[6] = {0,0,0,0,0,0};
 
 struct Command
 {
@@ -137,7 +143,7 @@ struct RegisteredCommand
     unsigned char id;
     unsigned char instruction;
     unsigned char numberOfParameters;
-    unsigned char parameters[255];
+    unsigned char parameters[10];
 };
 
 //To be executed at the next action order
@@ -148,7 +154,7 @@ unsigned char numberOfRegisteredCommand = 0;
 Command command[6];
 
 unsigned long baudRate = 10000;
-long vitesse = 70000;
+
 
 void parallelOutput(int number)
 {
@@ -188,7 +194,9 @@ void setup() {
 void processCommand()
 {
     //for one motor or broadcast ID
-  if (currentCommandId < 6 || currentCommandId = 0xFE)
+    controlTable[0][LED] = currentCommandId;
+    //ugly hack -> we diminish the currentCommandId to have the id started at 0 but then the broadcast is not FE but FD…
+  if (currentCommandId < 6 || currentCommandId == 0xFD)
   {
     switch(currentCommandInstruction)
     {
@@ -235,12 +243,12 @@ void processCommand()
          }
         if (willMove)
         {
-          if ((getGoalOfMotor(currentCommandId) > getPositionOfMotor(currentCommandId)) && (YoupiSens[currentCommandId] == -1))
+          if ((getGoalOfMotor(currentCommandId) > getPositionOfMotor(currentCommandId)) && (YoupiSens[currentCommandId] != 1))
           {
             command[currentCommandId].order = 0;
             command[currentCommandId].value = 1;
           }
-          else if ((getGoalOfMotor(currentCommandId) < getPositionOfMotor(currentCommandId)) && (YoupiSens[currentCommandId] == 1))
+          else if ((getGoalOfMotor(currentCommandId) < getPositionOfMotor(currentCommandId)) && (YoupiSens[currentCommandId] != -1))
           {
             command[currentCommandId].order = 0;
             command[currentCommandId].value = -1;
@@ -250,7 +258,7 @@ void processCommand()
             command[currentCommandId].order = 1;
           }
           command[currentCommandId].id = currentCommandId;
-          command[currentCommandId].scheduleAt = time + vitesse;
+          command[currentCommandId].scheduleAt = time + getVitesseOfMotor(command[currentCommandId].id);
           command[currentCommandId].toStart = true;
         }
         Serial.write(0xFF);
@@ -267,11 +275,13 @@ void processCommand()
           registeredCommand[numberOfRegisteredCommand].id = currentCommandId;
           registeredCommand[numberOfRegisteredCommand].instruction = WRITE_DATA;
           registeredCommand[numberOfRegisteredCommand].numberOfParameters = currentCommandLength - 2;
-          for (int i = 0; i< currentCommandLength -2 ; ++i)
+          for (int i = 0; i< currentCommandLength -1 ; ++i)
           {
               registeredCommand[numberOfRegisteredCommand].parameters[i] = currentParameters[i];
+
           }
           numberOfRegisteredCommand +=1;
+
           Serial.write(0xFF);
           Serial.write(0xFF);
           Serial.write(currentCommandId + 1);
@@ -286,25 +296,26 @@ void processCommand()
           for (int commandIter = 0; commandIter< numberOfRegisteredCommand; ++commandIter)
           {
               RegisteredCommand* aCommand = &registeredCommand[commandIter];
+              controlTable[aCommand->id][LED] = 1;
               bool willMove = false;
-              for (int i = 0; i< registeredCommand[commandIter].numberOfParameters ; ++i)
+              for (int i = 0; i< aCommand->numberOfParameters ; ++i)
               {
-                  int controlId = registeredCommand[commandIter].parameters[0] + i;
+                  int controlId = aCommand->parameters[0] + i;
                   if (controlId == 30 || controlId == 31)
                   {
                       willMove = true;
                   }
-                  controlTable[currentCommandId][controlId] = registeredCommand[commandIter].parameters[i + 1 ];
+                  controlTable[aCommand->id][controlId] = aCommand->parameters[i + 1 ];
               }
               if (willMove)
               {
-                  int commandId = registeredCommand[commandIter].id;
-                  if ((getGoalOfMotor(commandId) > getPositionOfMotor(commandId)) && (YoupiSens[commandId] == -1))
+                  int commandId = aCommand->id;
+                  if ((getGoalOfMotor(commandId) > getPositionOfMotor(commandId)) && (YoupiSens[commandId] != 1))
                   {
                       command[commandId].order = 0;
                       command[commandId].value = 1;
                   }
-                  else if ((getGoalOfMotor(commandId) < getPositionOfMotor(commandId)) && (YoupiSens[commandId] == 1))
+                  else if ((getGoalOfMotor(commandId) < getPositionOfMotor(commandId)) && (YoupiSens[commandId] != -1))
                   {
                       command[commandId].order = 0;
                       command[commandId].value = -1;
@@ -314,11 +325,12 @@ void processCommand()
                       command[commandId].order = 1;
                   }
                   command[commandId].id = commandId;
-                  command[commandId].scheduleAt = time + vitesse;
+                  command[commandId].scheduleAt = time + getVitesseOfMotor(command[commandId].id);
                   command[commandId].toStart = true;
               }
           }
           numberOfRegisteredCommand = 0;
+          break;
       }
     }
   }
@@ -467,24 +479,42 @@ ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
 {
   cli();
   time += OCR1A;
-
+  bool commanddone = false;
   for (int i=0;i < 6; ++i)
   {
-      if (abs(command[i].scheduleAt - time) < 10)
+      if (command[i].toStart == false)
       {
           executeCommand(i);
+          commanddone = true;
+          break;
       }
   }
-
-  unsigned int nextInterruptTime = 65535;
-  for (int i=0;i < 6; ++i)
+  if (commanddone == false)
   {
-      if ((command[i].scheduleAt - time) < nextInterruptTime)
-      {
-          nextInterruptTime = command[i].scheduleAt - time;
-      }
+     for (int i=0;i < 6; ++i)
+     {
+         if (command[i].scheduleAt < time)
+         {
+             executeCommand(i);
+             break;
+         }
+
+     }
   }
 
+  unsigned long long nexttime = command[0].scheduleAt;
+  for (int i=1;i < 6; ++i)
+  {
+     if ( command[i].scheduleAt< nexttime)
+     {
+          nexttime = command[i].scheduleAt;
+     }
+  }
+  unsigned int nextInterruptTime = 65535;
+  if (nexttime < (time + baudRate))
+     nextInterruptTime = baudRate;
+  else if (nexttime < (time + nextInterruptTime))
+     nextInterruptTime = (nexttime - time);
   OCR1A = nextInterruptTime;
 
   sei();
