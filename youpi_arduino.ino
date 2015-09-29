@@ -90,8 +90,8 @@ unsigned short getShortInControlTableForMotor(unsigned char motor, unsigned char
 
 void setShortInControlTableForMotor(unsigned char motor, unsigned char parameter, short Position)
 {
-  controlTable[motor][parameter] = Position & 0xFF;
-  controlTable[motor][parameter + 1] = Position >> 8;
+  controlTable[motor][parameter] = (char)(Position & 0xFF);
+  controlTable[motor][parameter + 1] = (char)(Position >> 8);
 }
 
 unsigned short getPositionOfMotor(unsigned char motor)
@@ -99,9 +99,23 @@ unsigned short getPositionOfMotor(unsigned char motor)
   return getShortInControlTableForMotor(motor, CurrentPosition);
 }
 
-void setPositionOfMotor(unsigned char motor, short Position)
+void setPositionOfMotor(unsigned char motor, long Position)
 {
-  setShortInControlTableForMotor(motor, CurrentPosition, Position);
+  switch(motor)
+  {
+    case 1:
+    {
+      setShortInControlTableForMotor(motor, CurrentPosition, ((Position*1023)/6200));
+      break;
+    }
+    case 2:
+    {
+      setShortInControlTableForMotor(motor, CurrentPosition, ((Position*1023)/7800));
+      break;
+    }
+    default:
+      setShortInControlTableForMotor(motor, CurrentPosition, Position/10);
+  }
 }
 
 long getVitesseOfMotor(unsigned char motor)
@@ -112,7 +126,7 @@ long getVitesseOfMotor(unsigned char motor)
   if (control == 0)
     return vitesse;
   else
-    return vitesse*1023/control;
+    return (vitesse*1023)/control;
 }
 
 unsigned short getGoalOfMotor(unsigned char motor)
@@ -198,9 +212,9 @@ void calibrate()
            delay(1);
        }
    }
-   setPositionOfMotor(motor,0x1FF);
-   setGoalOfMotor(motor,0x1FF);
-   YoupiPosition[motor]=5110;
+   setPositionOfMotor(motor,431);
+   setGoalOfMotor(motor,431);
+   YoupiPosition[motor]=2610;
 }
   {
   int motor = 2;
@@ -232,9 +246,9 @@ void calibrate()
            delay(1);
        }
    }
-   setPositionOfMotor(motor,0x1FF);
-   setGoalOfMotor(motor,0x1FF);
-   YoupiPosition[motor]=5110;
+   setPositionOfMotor(motor,578);
+   setGoalOfMotor(motor,578);
+   YoupiPosition[motor]=4410;
 }
   {
   int motor = 3;
@@ -341,8 +355,6 @@ void setup() {
 
 void processCommand()
 {
-    //for one motor or broadcast ID
-    controlTable[0][LED] = currentCommandId;
     //ugly hack -> we diminish the currentCommandId to have the id started at 0 but then the broadcast is not FE but FD…
   if (currentCommandId < 6 || currentCommandId == 0xFD)
   {
@@ -380,7 +392,7 @@ void processCommand()
       case WRITE_DATA:
       {
         bool willMove = false;
-        for (int i = 0; i< currentCommandLength -2 ; ++i)
+        for (int i = 0; i< currentCommandLength -3 ; ++i)
          {
            int controlId = currentParameters[0] + i;
            if (controlId == 30 || controlId == 31)
@@ -444,7 +456,6 @@ void processCommand()
           for (int commandIter = 0; commandIter< numberOfRegisteredCommand; ++commandIter)
           {
               RegisteredCommand* aCommand = &registeredCommand[commandIter];
-              controlTable[aCommand->id][LED] = 1;
               bool willMove = false;
               for (int i = 0; i< aCommand->numberOfParameters ; ++i)
               {
@@ -607,7 +618,7 @@ void executeCommand(unsigned char commandId)
             parallelOutput(0x00+command[commandId].id); //moteur id start at 1
             command[commandId].toStart = true;
             YoupiPosition[command[commandId].id] += YoupiSens[command[commandId].id];
-            setPositionOfMotor(command[commandId].id, YoupiPosition[command[commandId].id]/10);
+            setPositionOfMotor(command[commandId].id, YoupiPosition[command[commandId].id]);
 
             if (getPositionOfMotor(command[commandId].id) == getGoalOfMotor(command[commandId].id))
             {
