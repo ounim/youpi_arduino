@@ -58,6 +58,7 @@
 #define Punch 48
 
 const int D[8] =  {13, 12, 11, 10, 9, 8, 7, 6};
+const int I[6] =  {14, 19, 18, 17, 16, 15};
 
 //unsigned long scheduleAt = 70000;
 unsigned long long time = 0;
@@ -105,13 +106,13 @@ void setPositionOfMotor(unsigned char motor, short Position)
 
 long getVitesseOfMotor(unsigned char motor)
 {
-  static long vitesse = 70000;
-  return vitesse;
+  static long vitesse = 7000;
+//  return vitesse;
   int control = getShortInControlTableForMotor(motor, MovingSpeed);
   if (control == 0)
     return vitesse;
   else
-    return vitesse/control;
+    return vitesse*1023/control;
 }
 
 unsigned short getGoalOfMotor(unsigned char motor)
@@ -165,6 +166,146 @@ void parallelOutput(int number)
     }
 }
 
+void calibrate()
+{
+  {
+  int motor = 1;
+   if (digitalRead(I[motor])) //we are in the black of the first motor
+   {
+       parallelOutput(0xBF);
+       delay(1);
+       parallelOutput(0x3F);
+       delay(1);
+       while (digitalRead(I[motor]))
+       {
+           parallelOutput(0x40 + motor);
+           delay(1);
+           parallelOutput(0x00 + motor);
+           delay(1);
+       }
+   }
+   else  //we are in the white of the first motor
+   {
+       parallelOutput(0x80);
+       delay(1);
+       parallelOutput(0x00);
+       delay(1);
+       while (!digitalRead(I[motor]))
+       {
+           parallelOutput(0x40 + motor);
+           delay(1);
+           parallelOutput(0x00 + motor);
+           delay(1);
+       }
+   }
+   setPositionOfMotor(motor,0x1FF);
+   setGoalOfMotor(motor,0x1FF);
+   YoupiPosition[motor]=5110;
+}
+  {
+  int motor = 2;
+   if (digitalRead(I[motor])) //we are in the black of the first motor
+   {
+       parallelOutput(0x80);
+       delay(1);
+       parallelOutput(0x00);
+       delay(1);
+       while (digitalRead(I[motor]))
+       {
+           parallelOutput(0x40 + motor);
+           delay(1);
+           parallelOutput(0x00 + motor);
+           delay(1);
+       }
+   }
+   else  //we are in the white of the first motor
+   {
+      parallelOutput(0xBF);
+       delay(1);
+       parallelOutput(0x3F);
+       delay(1);
+       while (!digitalRead(I[motor]))
+       {
+           parallelOutput(0x40 + motor);
+           delay(1);
+           parallelOutput(0x00 + motor);
+           delay(1);
+       }
+   }
+   setPositionOfMotor(motor,0x1FF);
+   setGoalOfMotor(motor,0x1FF);
+   YoupiPosition[motor]=5110;
+}
+  {
+  int motor = 3;
+   if (digitalRead(I[motor])) //we are in the black of the first motor
+   {
+      parallelOutput(0xBF);
+       delay(1);
+       parallelOutput(0x3F);
+       delay(1);
+       while (digitalRead(I[motor]))
+       {
+           parallelOutput(0x40 + motor);
+           delay(1);
+           parallelOutput(0x00 + motor);
+           delay(1);
+       }
+   }
+   else  //we are in the white of the first motor
+   {
+       parallelOutput(0x80);
+       delay(1);
+       parallelOutput(0x00);
+       delay(1);
+       while (!digitalRead(I[motor]))
+       {
+           parallelOutput(0x40 + motor);
+           delay(1);
+           parallelOutput(0x00 + motor);
+           delay(1);
+       }
+   }
+   setPositionOfMotor(motor,0x1FF);
+   setGoalOfMotor(motor,0x1FF);
+   YoupiPosition[motor]=5110;
+}
+  {
+  int motor = 4;
+   if (digitalRead(I[motor])) //we are in the black of the first motor
+   {
+      parallelOutput(0xBF);
+       delay(1);
+       parallelOutput(0x3F);
+       delay(1);
+       while (digitalRead(I[motor]))
+       {
+           parallelOutput(0x40 + motor);
+           delay(1);
+           parallelOutput(0x00 + motor);
+           delay(1);
+       }
+   }
+   else  //we are in the white of the first motor
+   {
+       parallelOutput(0x80);
+       delay(1);
+       parallelOutput(0x00);
+       delay(1);
+       while (!digitalRead(I[motor]))
+       {
+           parallelOutput(0x40 + motor);
+           delay(1);
+           parallelOutput(0x00 + motor);
+           delay(1);
+       }
+   }
+   setPositionOfMotor(motor,0x1FF);
+   setGoalOfMotor(motor,0x1FF);
+   YoupiPosition[motor]=5110;
+}
+}
+
 void setup() {
   for (int i = 0; i < 6; ++i)
   {
@@ -175,6 +316,11 @@ void setup() {
     for (int i = 0; i< 8; ++i)
     {
         pinMode(D[i], OUTPUT);
+    }
+      // set the digital pin as output:
+    for (int i = 0; i< 6; ++i)
+    {
+        pinMode(I[i], INPUT);
     }
    parallelOutput(0x47);
    parallelOutput(0x00);
@@ -189,6 +335,8 @@ void setup() {
     TIMSK1 |= (1 << OCIE1A);  // enable timer compare interrupt
     sei();
     Serial.begin(9600);
+
+    calibrate();
 }
 
 void processCommand()
@@ -463,7 +611,7 @@ void executeCommand(unsigned char commandId)
 
             if (getPositionOfMotor(command[commandId].id) == getGoalOfMotor(command[commandId].id))
             {
-                command[commandId].scheduleAt  = ULONG_MAX;
+                command[commandId].scheduleAt  = 9223372036854775807LL;
             }
             else
             {
@@ -515,6 +663,7 @@ ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
      nextInterruptTime = baudRate;
   else if (nexttime < (time + nextInterruptTime))
      nextInterruptTime = (nexttime - time);
+
   OCR1A = nextInterruptTime;
 
   sei();
