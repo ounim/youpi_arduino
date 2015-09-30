@@ -212,7 +212,7 @@ void calibrate()
            delay(1);
        }
    }
-   setPositionOfMotor(motor,431);
+   setShortInControlTableForMotor(motor, CurrentPosition,431);
    setGoalOfMotor(motor,431);
    YoupiPosition[motor]=2610;
 }
@@ -246,7 +246,7 @@ void calibrate()
            delay(1);
        }
    }
-   setPositionOfMotor(motor,578);
+   setShortInControlTableForMotor(motor, CurrentPosition,578);
    setGoalOfMotor(motor,578);
    YoupiPosition[motor]=4410;
 }
@@ -280,7 +280,7 @@ void calibrate()
            delay(1);
        }
    }
-   setPositionOfMotor(motor,0x1FF);
+   setShortInControlTableForMotor(motor, CurrentPosition,0x1FF);
    setGoalOfMotor(motor,0x1FF);
    YoupiPosition[motor]=5110;
 }
@@ -314,7 +314,7 @@ void calibrate()
            delay(1);
        }
    }
-   setPositionOfMotor(motor,0x1FF);
+   setShortInControlTableForMotor(motor, CurrentPosition,0x1FF);
    setGoalOfMotor(motor,0x1FF);
    YoupiPosition[motor]=5110;
 }
@@ -457,7 +457,7 @@ void processCommand()
           {
               RegisteredCommand* aCommand = &registeredCommand[commandIter];
               bool willMove = false;
-              for (int i = 0; i< aCommand->numberOfParameters ; ++i)
+              for (int i = 0; i< aCommand->numberOfParameters - 1; ++i)
               {
                   int controlId = aCommand->parameters[0] + i;
                   if (controlId == 30 || controlId == 31)
@@ -650,15 +650,21 @@ ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
   }
   if (commanddone == false)
   {
-     for (int i=0;i < 6; ++i)
-     {
-         if (command[i].scheduleAt < time)
+      unsigned long long nexttime = command[0].scheduleAt;
+      int nextcommand = 0;
+      for (int i=1;i < 6; ++i)
+      {
+         if ( command[i].scheduleAt< nexttime)
          {
-             executeCommand(i);
-             break;
+              nexttime = command[i].scheduleAt;
+              nextcommand = i;
          }
+      }
 
-     }
+      if (command[nextcommand].scheduleAt < time)
+      {
+          executeCommand(nextcommand);
+      }
   }
 
   unsigned long long nexttime = command[0].scheduleAt;
