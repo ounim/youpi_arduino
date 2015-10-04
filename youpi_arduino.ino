@@ -101,21 +101,7 @@ unsigned short getPositionOfMotor(unsigned char motor)
 
 void setPositionOfMotor(unsigned char motor, long Position)
 {
-  switch(motor)
-  {
-    case 1:
-    {
-      setShortInControlTableForMotor(motor, CurrentPosition, ((Position*1023)/6200));
-      break;
-    }
-    case 2:
-    {
-      setShortInControlTableForMotor(motor, CurrentPosition, ((Position*1023)/7800));
-      break;
-    }
-    default:
-      setShortInControlTableForMotor(motor, CurrentPosition, Position/10);
-  }
+   setShortInControlTableForMotor(motor, CurrentPosition, Position/10);
 }
 
 long getVitesseOfMotor(unsigned char motor)
@@ -212,9 +198,9 @@ void calibrate()
            delay(1);
        }
    }
-   setShortInControlTableForMotor(motor, CurrentPosition,431);
-   setGoalOfMotor(motor,431);
-   YoupiPosition[motor]=2610;
+   setShortInControlTableForMotor(motor, CurrentPosition,0x1FF);
+   setGoalOfMotor(motor,0x1FF);
+   YoupiPosition[motor]=5110;
 }
   {
   int motor = 2;
@@ -246,9 +232,9 @@ void calibrate()
            delay(1);
        }
    }
-   setShortInControlTableForMotor(motor, CurrentPosition,578);
-   setGoalOfMotor(motor,578);
-   YoupiPosition[motor]=4410;
+   setShortInControlTableForMotor(motor, CurrentPosition,0x1FF);
+   setGoalOfMotor(motor,0x1FF);
+   YoupiPosition[motor]=5110;
 }
   {
   int motor = 3;
